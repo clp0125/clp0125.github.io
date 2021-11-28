@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css" integrity="sha256-mUZM63G8m73Mcidfrv5E+Y61y7a12O5mW4ezU3bxqW4=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"clp0125.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.8.1","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+<meta name="description" content="深入Kafka集群成员关系 brocker启动时，通过创建临时节点，把自身ID注册到ZK；  Kafka组件订阅broker在ZK上的注册路径，当有brocker加入集群或退出集群时，Kafka组件就可以获得通知；  broker停机、长时间垃圾回收停顿时，导致会话超时，broker会从ZK上断开连接，此时broker在启动时创建的临时节点会自动从ZK上移除，监听broker列表的Kafka组件会">
+<meta property="og:type" content="article">
+<meta property="og:title" content="中间件-Kafka问题点整理">
+<meta property="og:url" content="https://clp0125.github.io/2021/11/28/Kafka/index.html">
+<meta property="og:site_name" content="chenlp&#39;s Blog">
+<meta property="og:description" content="深入Kafka集群成员关系 brocker启动时，通过创建临时节点，把自身ID注册到ZK；  Kafka组件订阅broker在ZK上的注册路径，当有brocker加入集群或退出集群时，Kafka组件就可以获得通知；  broker停机、长时间垃圾回收停顿时，导致会话超时，broker会从ZK上断开连接，此时broker在启动时创建的临时节点会自动从ZK上移除，监听broker列表的Kafka组件会">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/HW.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/1.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/2.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/3.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/4.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/%E8%AF%B7%E6%B1%82%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/%E8%BD%AE%E8%AF%A2.png">
+<meta property="og:image" content="https://clp0125.github.io/2021/11/28/Kafka/%E6%B6%88%E6%81%AF%E9%94%AE.png">
+<meta property="article:published_time" content="2021-11-28T13:01:55.000Z">
+<meta property="article:modified_time" content="2021-11-28T13:13:34.213Z">
+<meta property="article:author" content="chenlp">
+<meta property="article:tag" content="学习">
+<meta property="article:tag" content="Kafka">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://clp0125.github.io/2021/11/28/Kafka/HW.png">
+
+
+<link rel="canonical" href="https://clp0125.github.io/2021/11/28/Kafka/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://clp0125.github.io/2021/11/28/Kafka/","path":"2021/11/28/Kafka/","title":"中间件-Kafka问题点整理"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>中间件-Kafka问题点整理 | chenlp's Blog</title>
+  
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">chenlp's Blog</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B7%B1%E5%85%A5Kafka"><span class="nav-number">1.</span> <span class="nav-text">深入Kafka</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%9B%86%E7%BE%A4%E6%88%90%E5%91%98%E5%85%B3%E7%B3%BB"><span class="nav-number">1.1.</span> <span class="nav-text">集群成员关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%A7%E5%88%B6%E5%99%A8"><span class="nav-number">1.2.</span> <span class="nav-text">控制器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%8D%E5%88%B6"><span class="nav-number">1.3.</span> <span class="nav-text">复制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%84%E7%90%86%E8%AF%B7%E6%B1%82"><span class="nav-number">1.4.</span> <span class="nav-text">处理请求</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%94%9F%E4%BA%A7%E8%AF%B7%E6%B1%82"><span class="nav-number">1.4.1.</span> <span class="nav-text">生产请求</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%8E%B7%E5%8F%96%E8%AF%B7%E6%B1%82"><span class="nav-number">1.4.2.</span> <span class="nav-text">获取请求</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%AE%A1%E9%81%93"><span class="nav-number">2.</span> <span class="nav-text">数据管道</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E9%95%9C%E5%83%8F"><span class="nav-number">3.</span> <span class="nav-text">数据镜像</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%EF%BC%9A"><span class="nav-number">4.</span> <span class="nav-text">问题：</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E6%9C%8D%E5%8A%A1%E5%99%A8%E5%A4%87%E4%BB%BD%E7%AD%96%E7%95%A5"><span class="nav-number">4.1.</span> <span class="nav-text">多服务器备份策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E6%89%B9%E6%AC%A1%E5%86%99%E5%85%A5%EF%BC%88buffer-memory%E3%80%81batch-size%EF%BC%89"><span class="nav-number">4.2.</span> <span class="nav-text">分批次写入（buffer.memory、batch.size）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E4%B8%AApartition%E7%9A%84%E7%9B%AE%E7%9A%84%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F%E5%88%86%E5%8C%BA%E5%A4%A7%E5%B0%8F%E4%BC%9A%E5%BD%B1%E5%93%8D%E5%A4%84%E7%90%86%E9%80%9F%E5%BA%A6%E5%90%97%EF%BC%9F%E6%B6%88%E6%81%AF%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%A2%AB%E5%88%A0%E9%99%A4%EF%BC%9F"><span class="nav-number">4.3.</span> <span class="nav-text">多个partition的目的是什么？分区大小会影响处理速度吗？消息什么时候被删除？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%BF%E6%92%AD%E6%98%AF%E6%80%8E%E4%B9%88%E5%81%9A%E7%9A%84%EF%BC%9F%E6%B6%88%E8%B4%B9%E8%80%85%E7%BE%A4%E7%BB%84%E5%AF%B9%E5%BA%94%E4%B8%80%E4%B8%AA%E5%AE%8C%E6%95%B4%E7%9A%84%E4%B8%BB%E9%A2%98"><span class="nav-number">4.4.</span> <span class="nav-text">广播是怎么做的？消费者群组对应一个完整的主题</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#RangeAssignor%EF%BC%9A"><span class="nav-number">4.4.1.</span> <span class="nav-text">RangeAssignor：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#roundrobin%E7%AD%96%E7%95%A5"><span class="nav-number">4.4.2.</span> <span class="nav-text">roundrobin策略</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E9%87%8Cnew%E4%B8%80%E4%B8%AA%E6%B6%88%E8%B4%B9%E8%80%85%EF%BC%8C%E6%98%AF%E5%88%9B%E5%BB%BA%E4%BA%86%E4%B8%80%E4%B8%AA%E6%96%B0%E7%9A%84%E9%80%BB%E8%BE%91%E4%B8%8A%E7%9A%84%E6%B6%88%E8%B4%B9%E8%80%85%E5%90%97%EF%BC%9F"><span class="nav-number">4.5.</span> <span class="nav-text">代码里new一个消费者，是创建了一个新的逻辑上的消费者吗？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B6%88%E6%81%AF%E6%B5%81%E5%92%8Ctopic%E6%98%AF%E4%B8%80%E4%B8%AA%E6%84%8F%E6%80%9D%E5%90%97%EF%BC%9F"><span class="nav-number">4.6.</span> <span class="nav-text">消息流和topic是一个意思吗？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%87%E5%88%86%E5%8C%BA%E5%86%99%E5%85%A5%E6%95%B0%E6%8D%AE%E4%B8%80%E5%AE%9A%E6%88%90%E5%8A%9F%E5%90%97%EF%BC%9F"><span class="nav-number">4.7.</span> <span class="nav-text">备分区写入数据一定成功吗？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B6%88%E6%81%AF%E5%88%86%E5%88%B0partition%E6%98%AF%E9%9A%8F%E6%9C%BA%E7%9A%84%E5%90%97%EF%BC%9F"><span class="nav-number">4.8.</span> <span class="nav-text">消息分到partition是随机的吗？</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%BD%AE%E8%AF%A2%E7%AD%96%E7%95%A5-Round-robin-%E2%80%94%E6%9C%80%E5%B8%B8%E7%94%A8%E7%9A%84%E5%88%86%E5%8C%BA%E7%AD%96%E7%95%A5%E4%B9%8B%E4%B8%80"><span class="nav-number">4.8.1.</span> <span class="nav-text">轮询策略(Round-robin)—最常用的分区策略之一</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%9A%8F%E6%9C%BA%E7%AD%96%E7%95%A5-Randomness-%E2%80%94%E5%B7%B2%E8%BF%87%E6%97%B6"><span class="nav-number">4.8.2.</span> <span class="nav-text">随机策略(Randomness)—已过时</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%B6%88%E6%81%AF%E9%94%AE%E7%AD%96%E7%95%A5-Key-ordering"><span class="nav-number">4.8.3.</span> <span class="nav-text">消息键策略(Key-ordering)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%9C%B0%E7%90%86%E5%88%86%E5%8C%BA%E7%AD%96%E7%95%A5"><span class="nav-number">4.8.4.</span> <span class="nav-text">地理分区策略</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#controller%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88%E4%BA%8B%E6%83%85%EF%BC%9F"><span class="nav-number">4.9.</span> <span class="nav-text">controller做了什么事情？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%88%86%E5%8C%BA%E4%BC%9A%E5%A4%87%E4%BB%BD%E5%88%B0%E5%87%A0%E4%B8%AAbroker%E4%B8%8A%EF%BC%9F"><span class="nav-number">4.10.</span> <span class="nav-text">一个分区会备份到几个broker上？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#acks%E8%B6%85%E8%BF%87%E5%A4%87%E4%BB%BD%E6%95%B0%E4%BC%9A%E6%80%8E%E4%B9%88%E6%A0%B7%EF%BC%9Facks%E4%B8%8D%E5%90%8C%EF%BC%8C%E5%AF%B9%E5%A4%87%E4%BB%BD%E6%9C%89%E4%BB%80%E4%B9%88%E5%BD%B1%E5%93%8D%EF%BC%9F"><span class="nav-number">4.11.</span> <span class="nav-text">acks超过备份数会怎么样？acks不同，对备份有什么影响？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B6%88%E8%B4%B9%E8%80%85%E4%B8%8Ezk%E7%9A%84%E5%85%B3%E7%B3%BB%EF%BC%9F"><span class="nav-number">4.12.</span> <span class="nav-text">消费者与zk的关系？</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="chenlp"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">chenlp</p>
+  <div class="site-description" itemprop="description">chenlp杂货铺</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">2</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://clp0125.github.io/2021/11/28/Kafka/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="chenlp">
+      <meta itemprop="description" content="chenlp杂货铺">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="chenlp's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          中间件-Kafka问题点整理
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2021-11-28 21:01:55 / 修改时间：21:13:34" itemprop="dateCreated datePublished" datetime="2021-11-28T21:01:55+08:00">2021-11-28</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E4%B8%AD%E9%97%B4%E4%BB%B6/" itemprop="url" rel="index"><span itemprop="name">中间件</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="深入Kafka"><a href="#深入Kafka" class="headerlink" title="深入Kafka"></a>深入Kafka</h2><h3 id="集群成员关系"><a href="#集群成员关系" class="headerlink" title="集群成员关系"></a>集群成员关系</h3><ol>
+<li><p>brocker启动时，通过创建临时节点，把自身ID注册到ZK；</p>
+</li>
+<li><p>Kafka组件订阅broker在ZK上的注册路径，当有brocker加入集群或退出集群时，Kafka组件就可以获得通知；</p>
+</li>
+<li><p>broker停机、长时间垃圾回收停顿时，导致会话超时，broker会从ZK上断开连接，此时broker在启动时创建的临时节点会自动从ZK上移除，监听broker列表的Kafka组件会被告知该broker已移除。</p>
+<span id="more"></span>
+<h3 id="控制器"><a href="#控制器" class="headerlink" title="控制器"></a>控制器</h3></li>
+<li><p>控制器就是一个broker，有额外的任务：负责分区首领的选举(后续了解)；</p>
+</li>
+<li><p>第一个启动的broker通过在ZK创建一个临时节点：/controller，让自己成为控制器，其他broker再启动时也会尝试创建这个节点，但会收到节点已存在的异常；其他broker在该控制节点创建watch对象，可以收到控制节点的变更通知；</p>
+</li>
+<li><p>当控制器发觉一个broker已离开集群，则那些失去首领的分区需要一个新首领（这些分区的首领刚好在这个broker上）。控制器遍历分区，并确定新首领，然后向包含新首领的broker和包含跟随者的broker发送请求，该请求消息包含了谁是新首领以及谁是分区跟随者的信息。随后，新首领开始处理来自生产者和消费者的要求，跟随者从新首领那复制消息。</p>
+</li>
+</ol>
+<h3 id="复制"><a href="#复制" class="headerlink" title="复制"></a>复制</h3><ol>
+<li><p>副本类型</p>
+<blockquote>
+<p><code>leader</code>：首领副本，所有生产者、消费者的请求都是经过这个副本；</p>
+<p><code>follower</code>：跟随者副本，除首领副本以外的副本都是跟随者。跟随者副本不处理来自客户端的请求，唯一任务就是从首领那复制消息，保持与首领一致的状态。如果首领崩溃，其中一个跟随者会被提升为新首领。</p>
+</blockquote>
+</li>
+<li><p>follower为了与leader保持同步，会向leader发送获取数据的请求(与消费者为了读取消息而发送的请求是一致的)，leader将响应消息发给follower，响应消息包含了跟随者获取的消息的偏移量，这些偏移量是有序的。</p>
+</li>
+<li><p>follower先请求消息1，收到响应后，接着请求消息2，收到相应后继续请求消息3……在消息响应收到之前不会发送获取下一个消息的请求。通过查看每个follower请求的最新偏移量，leader能够知道每个follower复制的进度，如果follower在规定时间内没有请求最新的数据，那么它会被认为是不同步的；相反，持续请求最新消息的副本被称为同步的副本；</p>
+<p><code>PS:其实严格一点讲，同步副本应该要满足两个条件：1、与ZK保持心跳；2、在过去一定时间(比如5s，可配置)从首领获取过最新的消息。</code></p>
+</li>
+<li><p>AR、ISR、OSR</p>
+<blockquote>
+<ol>
+<li><code>AR（Assigned Repllicas）</code>：分区中的所有副本；</li>
+<li><code>ISR(In-Sync Replicas)</code>：所有与leader保持一定同步的副本（包括Leader），ISR集合是AR集合中的一个子集；</li>
+<li><code>OSR(Out-Sync Relipcas)</code>：与leader副本同步滞后过多的副本（不包括leader）；</li>
+<li>AR=ISR+OSR，正常情况下AR=ISR，OSR为空。</li>
+</ol>
+</blockquote>
+</li>
+<li><p>HW、LEO</p>
+<img src="/2021/11/28/Kafka/HW.png" class="" title="图片HW">
+
+<ol>
+<li><code>LogStartOffset</code>：第一条消息的offset，为0；</li>
+<li><code>HW（High Watermark）</code>：俗称高水位，标识了一个特定消息偏移量，消费者只能拉取到这个offset之前的消息；</li>
+<li><code>LEO（Log End Offset）</code>：标识当前日志文件中下一条待写入的消息的offset。上图中offset为9的位置即为当前日志文件的 LEO，LEO 的大小相当于当前日志分区中最后一条消息的offset值加1；</li>
+<li>分区 ISR 集合中的每个副本都会维护自身的 LEO ，而 ISR 集合中最小的 LEO 即为分区的 HW，对消费者而言只能消费 HW 之前的消息；</li>
+</ol>
+</li>
+<li><p>ISR集合与HW、LEO的关系</p>
+<ol>
+<li><p><code>假设分区的ISR集合有3个副本，一个leader副本和2个follower副本，此时分区的LEO和HW分别为3。消息3、4从生产者出发后先存入leader副本。</code></p>
+<p>图一：</p>
+<img src="/2021/11/28/Kafka/1.png" class="" title="图片1">
+
+<p>图二：</p>
+<img src="/2021/11/28/Kafka/2.png" class="" title="图片2"></li>
+<li><p><code>在消息被写入leader之后，follower发送拉取请求来拉取消息3和4，进行消息同步。同步过程中不同副本的效率不同；如下图，在某一时刻follower1完全跟上了leader，而follower2只同步了消息3，此时leader副本的LEO为5，follower1的LEO为5，follower2的LEO为4，因此当前分区的HW取最小值4，此时消费者可以消费offset0至3的消息。</code></p>
+<img src="/2021/11/28/Kafka/3.png" class="" title="图片3"></li>
+<li><p><code>当所有副本成功写入消息3、4之后，分区的HW和所有副本的LEO都变为5，此时消费者可以消费到offset为0至4的消息。</code></p>
+<img src="/2021/11/28/Kafka/4.png" class="" title="图片4">
+
+<p><code>总结</code>：kafka复制机制既不是完全的同步复制，也不是单纯的异步复制。事实上，同步复制要求ISR的所有副本都复制完成，这条消息才算真正成功，才能够被消费；而在异步复制的方式上，follower异步地从leader复制数据。kafka使用这种方式有效权衡了数据可靠性和性能之间的关系。</p>
+<p><code>注</code>：在这种情况下，如果follower副本都还没有复制而落后于leader副本，然后leader副本宕机，则会造成数据丢失。</p>
+</li>
+</ol>
+</li>
+</ol>
+<h3 id="处理请求"><a href="#处理请求" class="headerlink" title="处理请求"></a>处理请求</h3><ol>
+<li><p>broker的大部分工作是处理客户端、分区副本、控制器发送给分区首领的请求。Kafka提供了一个基于TCP的二进制协议，所有请求消息都包含一个标准消息头：</p>
+<blockquote>
+<p>Request type：请求类型，即：API key；</p>
+<p>Request version：客户端的版本号；</p>
+<p>Correlation ID：一个具有唯一性的数字，标识请求消息，也会出现在响应消息和错误日志里；</p>
+<p>Client ID：标识发送请求的客户端；</p>
+</blockquote>
+</li>
+<li><p>请求流程：</p>
+<ol>
+<li>Kafka的broker会在监听的每个端口上运行一个Acceptor线程，该线程创建连接然后交给Processor线程去处理；</li>
+<li>Processor线程读取消息解析后放入请求队列，线程池中的KafkaRequestHandler从请求队列中获取连接，根据头部信息获取对应的KafkaApi进行相关处理；</li>
+<li>通过回调，将处理后的结果通过RequestChannel写到Processor对应的响应队列，等待Processor线程将响应队列的消息发送回客户端。</li>
+</ol>
+<img src="/2021/11/28/Kafka/%E8%AF%B7%E6%B1%82%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B.png" class="" title="图片处理流程"></li>
+<li><p>生产者请求和获取请求都必须发送给分区的首领副本，如果broker收到一个针对特定分区的请求，而该分区的首领在另一个broker上，那么会给请求的客户端返回一个“非分区首领”的错误响应。Kafka客户端要负责把生产请求和获取请求发送到正确的broker上。</p>
+</li>
+<li><p>客户端如何知道该往哪里发送请求？</p>
+<p>客户端使用元数据请求，获取主题相关信息，信息里指明了主题包含的分区、每个分区有哪些副本，以及哪个是首领副本，元数据请求可以发送给任意一个broker，因为所有的broker都缓存了这些元数据信息。</p>
+<p>一般情况下客户端会缓存这些元数据，并按照metadata.max.age.ms参数配置的时间间隔去刷新这些信息，如果客户端收到“非首领”报错，也会触发这个刷新请求；</p>
+</li>
+</ol>
+<h4 id="生产请求"><a href="#生产请求" class="headerlink" title="生产请求"></a>生产请求</h4><ol>
+<li><p>之前提到过acks参数；</p>
+<ol>
+<li><p>acks=1，只要首领收到消息就给客户端反馈写入成功；</p>
+<p><code>注</code>：这是kafka的默认设置；</p>
+<p>如果分区leader刚接收到消息并反馈客户端，follower还未同步，结果leader所在的broker宕机了，则该条消息会被丢失，因为客户端认为发送成功了。</p>
+</li>
+<li><p>acks=all 或者 -1，需要所有同步副本收到消息才反馈写入成功；同步期间，请求被保存在一个叫炼狱的缓冲区(purgatory)，直到所有同步副本收到消息，响应才被返回给客户端；</p>
+<p><code>注</code>：如果分区只有一个副本，即leader副本，那么acks=all/-1，也不能代表数据不会丢失。</p>
+</li>
+<li><p>acks=0，客户端不需要等待broker响应，直接认为消息发送成功；</p>
+<p>如果消息在发送路上，leader所在的broker宕机，则消息丢失。</p>
+</li>
+</ol>
+</li>
+<li><p>包含首领副本的broker收到生产请求时，会对请求做一些验证：</p>
+<blockquote>
+<p>发送数据的用户是否有主题写入权限；</p>
+<p>请求包里的acks值是否有效(只允许出现0、1、-1、all);</p>
+<p>如果acks=all， 是否有足够多的同步副本保证消息已经被安全写入，如果同步副本数量不足，broker可以拒绝处理新的消息；（此处我的理解是：对于先前的消息是否有足够多的同步副本完成复制。）</p>
+</blockquote>
+</li>
+</ol>
+<h4 id="获取请求"><a href="#获取请求" class="headerlink" title="获取请求"></a>获取请求</h4><ol>
+<li><p>客户端发送请求，向broker请求主题分区里具有特定偏移量的消息，比如：<code>请求把主题Test分区0偏移量从50开始的消息及主题Test分区3偏移量从63开始的消息发给我</code>。</p>
+</li>
+<li><p>分区首领所在broker收到请求会检查请求是否有效，比如：</p>
+<p>偏移量是否存在？数据是否已被删除？校验失败的话会返回错误。</p>
+</li>
+<li><p>客户端可以设置broker单次返回数据量的上下限：</p>
+<ol>
+<li>上限设定是为了防止数据量过大导致客户端内存不足；</li>
+<li>下限设定可以让主体消息累积到一定量之后再返回；适合数据量小且对数据实时性要求不高的情况；当然，该场景下不会让客户端一直等待broker累积数据，在等待一段时间后(客户端可定义时间)，就可以拿到数据。</li>
+</ol>
+</li>
+<li><p>大部分客户端只能读取已经被写入所有同步副本的消息，因为没有被完全同步的消息是“不安全”的，如果首领宕机，另一个副本成为新首领，那么这些消息便丢失了。会破环一致性：消费者A读取并处理了消息X，消费者B去读取时，X却不存在。</p>
+</li>
+</ol>
+<h2 id="数据管道"><a href="#数据管道" class="headerlink" title="数据管道"></a>数据管道</h2><h2 id="数据镜像"><a href="#数据镜像" class="headerlink" title="数据镜像"></a>数据镜像</h2><h2 id="问题："><a href="#问题：" class="headerlink" title="问题："></a>问题：</h2><h3 id="多服务器备份策略"><a href="#多服务器备份策略" class="headerlink" title="多服务器备份策略"></a>多服务器备份策略</h3><p>参考前面复制部分内容；</p>
+<h3 id="分批次写入（buffer-memory、batch-size）"><a href="#分批次写入（buffer-memory、batch-size）" class="headerlink" title="分批次写入（buffer.memory、batch.size）"></a>分批次写入（buffer.memory、batch.size）</h3>
+
+<ol>
+<li>Kafka的客户端发送数据到服务器，都是先进入到客户端本地的内存缓冲里，然后把很多消息按分区收集成一个一个的Batch，再发送到Broker上去。</li>
+<li>buffer.memory约束客户端能够使用的内存缓冲大小，默认值32M；如果内存限制设置太小，可能导致：消息快速的写入内存缓冲里面，但是Sender线程来不及把Request发送到Kafka服务器，内存缓冲被写满就会阻塞消息的写入；</li>
+<li>batch.size决定每个Batch存放多少数据就可以发送出去，默认16KB，适度提升batch的大小，可以允许更多的数据缓冲在里面，那么单次Request发送的数据量就变多，吞吐量会有所提升；但不能无限大，否则数据一直在batch里迟迟不发送出去，消息延迟就会很高；</li>
+<li>要是batch迟迟无法凑满，此时就需要引入另外一个参数：linger.ms，默认值为0；当到达该参数时间限制，不论batch是否写满，都会把消息发送出去；</li>
+</ol>
+<h3 id="多个partition的目的是什么？分区大小会影响处理速度吗？消息什么时候被删除？"><a href="#多个partition的目的是什么？分区大小会影响处理速度吗？消息什么时候被删除？" class="headerlink" title="多个partition的目的是什么？分区大小会影响处理速度吗？消息什么时候被删除？"></a>多个partition的目的是什么？分区大小会影响处理速度吗？消息什么时候被删除？</h3><ol>
+<li><p>打个比方：不同的起始点和目的地的公路运输，需要修不同高速公路（主题），高速公路上可以提供多条车道（分区），流量大的公路多修几条车道(分区)保证畅通，流量小的公路少修几条车道(分区)避免浪费，收费站收费亭好比消费者群组。</p>
+</li>
+<li><p>如果topic内的消息只存于一个broker的分区，那这个broker会成为性能瓶颈；分区实现了水平扩展和负载均衡。</p>
+</li>
+<li><p>分区大小与处理速度没有关系，限制了Kafka能存储的消息数据量；</p>
+</li>
+<li><p>每个partition(分区)在kafka服务器都有一个独立文件夹，每个分区被分为多个segment(片段)，这是Kafka解决查询效率的手段之一；比如有100条Message，它们的offset是从0到99。假设将数据文件分成5段，第一段为0-19，第二段为20-39，以此类推，每段数据放在一个单独的数据文件(segment)里面，数据文件以该片段中最小的offset命名。这样在查找指定offset的Message的时候，用二分查找就可以定位到该Message在哪个片段中。每个segment有一个index文件(索引文件)、一个log文件(数据文件)，定位到在哪个片段之后，再根据索引文件去数据文件里面捞数据。下图是某个分区目录下的文件：</p>
+
+
+<p>默认情况下每个片段包含1G(log.retention.bytes=1073741824)或者一周的数据(一周168h，log.retention.hours=168)，以较小的为准；在broker往leader分区写入消息时，如果被写入片段达到上限，就会关闭当前片段文件，并打开一个新的片段文件。当所有片段都写满时，会清除下一个分区片段的数据。</p>
+</li>
+</ol>
+<h3 id="广播是怎么做的？消费者群组对应一个完整的主题"><a href="#广播是怎么做的？消费者群组对应一个完整的主题" class="headerlink" title="广播是怎么做的？消费者群组对应一个完整的主题"></a>广播是怎么做的？消费者群组对应一个完整的主题</h3><p>同一个group id的消费者群组成员，共同消费消息，一条消息只能被其中的一个消费者群组成员所消费；</p>
+<p>分区分配：在构造KafkaConsumer时增加参数partition.assignment.strategy，值为内置的两种策略中的一种。</p>
+<h4 id="RangeAssignor："><a href="#RangeAssignor：" class="headerlink" title="RangeAssignor："></a>RangeAssignor：</h4><p>每次对一个主题分配消费者，分区数能整除消费者数，则每个消费者得到分区数一样，如果有余数，排在前面的消费者在有多的剩余分区情况下，就会多分配一个分区</p>
+<p><code>比如：</code></p>
+<p>两个消费者:C0，C1；</p>
+<p>两个主题 :t0， t1; </p>
+<p>每个主题三个分区 :t0p0，t0p1，t0p2；t1p0，t1p1，t1p2；（每个消费者都订阅了每个主题）</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">C0: [t0p0, t0p1, t1p0, t1p1] // 先分配t0, 消费者按字典序排序，往前的得到的多</span><br><span class="line">C1: [t0p2, t1p2]</span><br></pre></td></tr></table></figure>
+
+<p>又比如：三个消费者，两个主题，五个分区 （每个消费者都订阅了每个主题）</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">C0: [t0p0, t0p1, t1p0, t1p1] // 先分配t0, 消费者按字典序排序，往前的得到的多</span><br><span class="line">C1: [t0p2, t0p3, t1p2, t1p3]</span><br><span class="line">C2: [t0p4, t1p4]</span><br></pre></td></tr></table></figure>
+
+<h4 id="roundrobin策略"><a href="#roundrobin策略" class="headerlink" title="roundrobin策略"></a>roundrobin策略</h4><p>针对于全局所有的topic和消费者，分配步骤如下：</p>
+<ol>
+<li>消费者按照字典排序，例如C0, C1, C2… …，并构造环形迭代器。</li>
+<li>topic名称按照字典排序，并得到每个topic的所有分区，从而得到所有分区集合。</li>
+<li>遍历第2步所有分区集合，同时轮询消费者。</li>
+<li>如果轮询到的消费者订阅的topic不包括当前遍历的分区所属topic，则跳过；否则分配给当前消费者，并继续第3步。</li>
+</ol>
+<p>如图所示：<br> 3个Topic：T0（3个分区0, 1, 2）, T1（两个分区0, 1）, T2（4个分区0, 1, 2, 3）；<br> 3个consumer: C0订阅了[T0, T1]， C1订阅了[T1, T2]， C2订阅了[T2, T0]；</p>
+<p>roundrobin结果分配结果如下：<br> T0-P0分配给C0，T0-P1分配给C2，T0-P2分配给C0，<br> T1-P0分配给C1，T1-P1分配给C0，<br> T2-P0分配给C1，T2-P1分配给C2，T2-P2分配给C1，T0-P3分配给C2；</p>
+
+
+
+
+<h3 id="代码里new一个消费者，是创建了一个新的逻辑上的消费者吗？"><a href="#代码里new一个消费者，是创建了一个新的逻辑上的消费者吗？" class="headerlink" title="代码里new一个消费者，是创建了一个新的逻辑上的消费者吗？"></a>代码里new一个消费者，是创建了一个新的逻辑上的消费者吗？</h3><p>消费者是根据group id来区分身份的，如果是不同的group id，则属于一个新的消费者。只要group id一致，则会从上次消费结束的地方继续消费。</p>
+<h3 id="消息流和topic是一个意思吗？"><a href="#消息流和topic是一个意思吗？" class="headerlink" title="消息流和topic是一个意思吗？"></a>消息流和topic是一个意思吗？</h3><p>??</p>
+<h3 id="备分区写入数据一定成功吗？"><a href="#备分区写入数据一定成功吗？" class="headerlink" title="备分区写入数据一定成功吗？"></a>备分区写入数据一定成功吗？</h3><p>follower同步如果超出一定时间没有成功，否则会被移出ISR。</p>
+<h3 id="消息分到partition是随机的吗？"><a href="#消息分到partition是随机的吗？" class="headerlink" title="消息分到partition是随机的吗？"></a>消息分到partition是随机的吗？</h3><h4 id="轮询策略-Round-robin-—最常用的分区策略之一"><a href="#轮询策略-Round-robin-—最常用的分区策略之一" class="headerlink" title="轮询策略(Round-robin)—最常用的分区策略之一"></a>轮询策略(Round-robin)—最常用的分区策略之一</h4><pre><code>     比如一个主题下有3个分区，那么第一条消息被发送到分区0，第二条被发送到分区1，第三条被发送到分区2，以此类推。当生产第4条消息时又会重新开始，即将其分配到分区0，如下图所示：
+</code></pre>
+<img src="/2021/11/28/Kafka/%E8%BD%AE%E8%AF%A2.png" class="" title="轮询">
+
+<h4 id="随机策略-Randomness-—已过时"><a href="#随机策略-Randomness-—已过时" class="headerlink" title="随机策略(Randomness)—已过时"></a>随机策略(Randomness)—已过时</h4><p>​         比如一个主题下有三个分区，那么会随机选一个分区进行消息存放。随机策略是老版本生产者使用的分区策略，在新版本中已经改为轮询了。</p>
+<h4 id="消息键策略-Key-ordering"><a href="#消息键策略-Key-ordering" class="headerlink" title="消息键策略(Key-ordering)"></a>消息键策略(Key-ordering)</h4><p>​         Kafka允许为每条消息定义消息键（Key），可以保证同一个Key的所有消息都会进入相同的分区。先计算出该Topic总的分区数，然后计算出key的hashCode与分区数取模的绝对值。</p>
+<img src="/2021/11/28/Kafka/%E6%B6%88%E6%81%AF%E9%94%AE.png" class="" title="消息键">
+
+<h4 id="地理分区策略"><a href="#地理分区策略" class="headerlink" title="地理分区策略"></a>地理分区策略</h4><p>这种策略一般只针对那些大规模的Kafka集群，特别是跨城市、跨国家甚至是跨大洲的集群；</p>
+<h3 id="controller做了什么事情？"><a href="#controller做了什么事情？" class="headerlink" title="controller做了什么事情？"></a>controller做了什么事情？</h3><p>负责kafka的分区首领的选举：</p>
+<ol>
+<li>当控制器发现一个broker断开时候，通过观察zookeeper的相关路径得知，如果这个离开的broker里面有部分分区的首领，那么控制器会从不同的分区副本中选举下一个副本为分区首领，然后向所有分区跟随者发送包含谁是分区首领副本谁是分区副本的请求，随后，新的首领副本就能处理新的生产者请求；</li>
+<li>当控制器发现一个新的broker加入集群的时候，控制器会检查新加入的broker是否包含现有分区的副本，如果包含，控制器就会把变更通知发送给新加入的broker和其他broker，新的broker开始从首领副本复制消息。</li>
+</ol>
+<h3 id="一个分区会备份到几个broker上？"><a href="#一个分区会备份到几个broker上？" class="headerlink" title="一个分区会备份到几个broker上？"></a>一个分区会备份到几个broker上？</h3><p>参数可配：default.replication.factor=1(副本因子)</p>
+<h3 id="acks超过备份数会怎么样？acks不同，对备份有什么影响？"><a href="#acks超过备份数会怎么样？acks不同，对备份有什么影响？" class="headerlink" title="acks超过备份数会怎么样？acks不同，对备份有什么影响？"></a>acks超过备份数会怎么样？acks不同，对备份有什么影响？</h3><p>参考前面复制部分内容；</p>
+<h3 id="消费者与zk的关系？"><a href="#消费者与zk的关系？" class="headerlink" title="消费者与zk的关系？"></a>消费者与zk的关系？</h3>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%AD%A6%E4%B9%A0/" rel="tag"># 学习</a>
+              <a href="/tags/Kafka/" rel="tag"># Kafka</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/11/28/photograph/" rel="prev" title="摄影学习-(一)基础介绍">
+                  <i class="fa fa-chevron-left"></i> 摄影学习-(一)基础介绍
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">chenlp</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

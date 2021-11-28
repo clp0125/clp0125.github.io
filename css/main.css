@@ -2131,6 +2131,9 @@ pre code {
 }
 .post-eof {
   background: #ccc;
+  height: 1px;
+  margin: 80px auto 60px;
+  width: 8%;
 }
 .post-block:last-of-type .post-eof {
   display: none;
@@ -2609,7 +2612,7 @@ ul.breadcrumb li:last-child {
   vertical-align: middle;
 }
 .links-of-author a::before {
-  background: #d59e18;
+  background: #26ffff;
   display: inline-block;
   margin-right: 3px;
   transform: translateY(-2px);
