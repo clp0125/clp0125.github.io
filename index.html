@@ -205,7 +205,7 @@
       <span class="post-meta-item-text">发表于</span>
       
 
-      <time title="创建时间：2021-11-28 21:01:55 / 修改时间：21:13:34" itemprop="dateCreated datePublished" datetime="2021-11-28T21:01:55+08:00">2021-11-28</time>
+      <time title="创建时间：2021-11-28 21:01:55 / 修改时间：21:40:52" itemprop="dateCreated datePublished" datetime="2021-11-28T21:01:55+08:00">2021-11-28</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -227,12 +227,7 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h2 id="深入Kafka"><a href="#深入Kafka" class="headerlink" title="深入Kafka"></a>深入Kafka</h2><h3 id="集群成员关系"><a href="#集群成员关系" class="headerlink" title="集群成员关系"></a>集群成员关系</h3><ol>
-<li><p>brocker启动时，通过创建临时节点，把自身ID注册到ZK；</p>
-</li>
-<li><p>Kafka组件订阅broker在ZK上的注册路径，当有brocker加入集群或退出集群时，Kafka组件就可以获得通知；</p>
-</li>
-<li><p>broker停机、长时间垃圾回收停顿时，导致会话超时，broker会从ZK上断开连接，此时broker在启动时创建的临时节点会自动从ZK上移除，监听broker列表的Kafka组件会被告知该broker已移除。</p>
+          <h2 id="深入Kafka"><a href="#深入Kafka" class="headerlink" title="深入Kafka"></a>深入Kafka</h2><h3 id="集群成员关系"><a href="#集群成员关系" class="headerlink" title="集群成员关系"></a>集群成员关系</h3><p>1、brocker启动时，通过创建临时节点，把自身ID注册到ZK；<br>2、Kafka组件订阅broker在ZK上的注册路径，当有brocker加入集群或退出集群时，Kafka组件就可以获得通知；<br>3、broker停机、长时间垃圾回收停顿时，导致会话超时，broker会从ZK上断开连接，此时broker在启动时创建的临时节点会自动从ZK上移除，监听broker列表的Kafka组件会被告知该broker已移除。</p>
           <!--noindex-->
             <div class="post-button">
               <a class="btn" href="/2021/11/28/Kafka/#more" rel="contents">
