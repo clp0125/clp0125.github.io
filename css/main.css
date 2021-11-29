@@ -2133,7 +2133,7 @@ pre code {
   background: #ccc;
   height: 1px;
   margin: 80px auto 60px;
-  width: 8%;
+  width: 90%;
 }
 .post-block:last-of-type .post-eof {
   display: none;
@@ -2612,7 +2612,7 @@ ul.breadcrumb li:last-child {
   vertical-align: middle;
 }
 .links-of-author a::before {
-  background: #26ffff;
+  background: #d2a4a2;
   display: inline-block;
   margin-right: 3px;
   transform: translateY(-2px);
